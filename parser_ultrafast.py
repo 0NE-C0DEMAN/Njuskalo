@@ -28,8 +28,8 @@ EXIT_PARSING_ERROR = 3
 EXIT_FS_ERROR = 4
 
 # Optimized Configuration - Use all available cores
-BATCH_SIZE = 200  # Much larger batches
-MAX_WORKERS = cpu_count()  # Use all CPU cores
+BATCH_SIZE = 400  # Much larger batches
+MAX_WORKERS = 8  # Use all CPU cores
 CHUNK_SIZE = 50  # Files per worker chunk
 
 # Pre-compiled regex patterns for speed
