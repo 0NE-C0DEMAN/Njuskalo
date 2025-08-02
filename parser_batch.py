@@ -27,7 +27,7 @@ EXIT_PARSING_ERROR = 3
 EXIT_FS_ERROR = 4
 
 # Configuration
-BATCH_SIZE = 50  # Number of files to process in each batch
+BATCH_SIZE = 48  # Number of files to process in each batch
 MAX_WORKERS = min(cpu_count(), 8)  # Use CPU cores but cap at 8 for memory management
 
 # Utils
@@ -277,31 +277,38 @@ def main():
     
     try:
         # Get all HTML files
-        all_files = [f for f in os.listdir(INPUT_DIR) if f.endswith(".html")]
-        total_files = len(all_files)
-        
+        all_html_files = [f for f in os.listdir(INPUT_DIR) if f.endswith(".html")]
+        # Skip already parsed (JSON exists) before batching
+        unparsed_files = []
+        for f in all_html_files:
+            base_filename = os.path.splitext(f)[0]
+            json_file = os.path.join(OUTPUT_DIR, base_filename + ".json")
+            if not os.path.exists(json_file):
+                unparsed_files.append(f)
+        total_files = len(unparsed_files)
+
         if total_files == 0:
-            print(f"No HTML files found in {INPUT_DIR}")
+            print(f"No unparsed HTML files found in {INPUT_DIR}")
             return EXIT_SUCCESS
-        
-        print(f"[INIT] Found {total_files} HTML files to process")
+
+        print(f"[INIT] Found {total_files} unparsed HTML files to process")
         print(f"[INIT] Using {MAX_WORKERS} workers, batch size: {BATCH_SIZE}")
-        
+
         # Process in batches
         all_results = []
         processed_count = 0
-        
+
         for i in range(0, total_files, BATCH_SIZE):
-            batch_files = all_files[i:i + BATCH_SIZE]
+            batch_files = unparsed_files[i:i + BATCH_SIZE]
             batch_num = (i // BATCH_SIZE) + 1
             total_batches = (total_files + BATCH_SIZE - 1) // BATCH_SIZE
-            
+
             print(f"\n[BATCH {batch_num}/{total_batches}] Processing files {i+1}-{min(i+BATCH_SIZE, total_files)} of {total_files}")
-            
+
             batch_results = process_batch(batch_files)
             all_results.extend(batch_results)
             processed_count += len(batch_results)
-            
+
             # Progress update
             progress = (processed_count / total_files) * 100
             elapsed = time.time() - start_time

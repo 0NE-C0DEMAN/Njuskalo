@@ -77,13 +77,8 @@ bearer_token_finder = importlib.util.module_from_spec(spec)
 sys.modules["bearer_token_finder"] = bearer_token_finder
 spec.loader.exec_module(bearer_token_finder)
 
-# Proxy rotation list (same as other scripts)
 PROXY_LIST = [
-    None,  # Local system (no proxy)
-    {
-        "http": "http://u07482d15574405cb-zone-custom-region-eu:u07482d15574405cb@118.193.58.115:2334",
-        "https": "http://u07482d15574405cb-zone-custom-region-eu:u07482d15574405cb@118.193.58.115:2334"
-    }
+    None  # Local system (no proxy)
 ]
 
 
@@ -100,7 +95,7 @@ async def fetch_phone_number(session, ad_id, bearer_token, cookies):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Referer": f"https://www.njuskalo.hr/nekretnine/*-oglas-{ad_id}",
     }
-    proxy_cfg = random.choice(PROXY_LIST)
+    proxy_cfg = None  # Always use local, no proxy
     try:
         resp = await session.get(url, headers=headers, cookies=cookies, timeout=15, proxies=proxy_cfg)
         resp.raise_for_status()
@@ -177,6 +172,39 @@ async def process_file(session, html_path, bearer_token, cookies):
 async def main():
     html_files = find_all_html_files()
     logging.info(f"Found {len(html_files)} HTML files.")
+
+
+    # --- FLAG: re-scrape ad_ids with null phone numbers ---
+    RESCRAPE_NULL_PHONES = False  # Set to False to skip nulls, True to re-scrape nulls
+
+    # Load ad_ids and their phone values from DB
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    c.execute("SELECT ad_id, phones FROM phones")
+    adid_to_phones = {row[0]: row[1] for row in c.fetchall()}
+    conn.close()
+
+    files_to_process = []
+    skipped = 0
+    rescrape_count = 0
+    for path in html_files:
+        ad_id = extract_ad_id_from_filename(path)
+        if not ad_id:
+            continue
+        if ad_id in adid_to_phones:
+            phones_val = adid_to_phones[ad_id]
+            if phones_val is None or phones_val == 'null':
+                if RESCRAPE_NULL_PHONES:
+                    rescrape_count += 1
+                    files_to_process.append(path)
+                else:
+                    skipped += 1
+                continue
+            skipped += 1
+            continue
+        files_to_process.append(path)
+    logging.info(f"Skipping {skipped} files already in DB with phones. Re-scraping {rescrape_count} with null phones. {len(files_to_process)} files left to process.")
+
     # Get initial token and cookies
     bearer_token, cookies = await get_token_and_cookies()
     logging.info("\n[INFO] Using Bearer token:")
@@ -188,8 +216,9 @@ async def main():
         return
     async with AsyncSession() as session:
         i = 0
-        while i < len(html_files):
-            batch = html_files[i:i+4]
+        BATCH_SIZE = 50
+        while i < len(files_to_process):
+            batch = files_to_process[i:i+BATCH_SIZE]
             results = await asyncio.gather(*[process_file(session, path, bearer_token, cookies) for path in batch])
             # If any batch result is 'REFRESH_TOKEN', refresh and retry that batch
             if 'REFRESH_TOKEN' in results:
@@ -204,8 +233,8 @@ async def main():
                     return
                 # Retry the same batch
                 continue
-            i += 4
-            await asyncio.sleep(random.uniform(0.8, 1.2))
+            i += BATCH_SIZE
+            # await asyncio.sleep(random.uniform(0.8, 1.2))
 
 
 if __name__ == "__main__":

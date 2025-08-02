@@ -18,7 +18,6 @@ from tqdm import tqdm
 import random
 import time
 import os
-import requests
 from curl_cffi.requests import AsyncSession
 
 # Import Playwright token/cookie fetcher
@@ -30,126 +29,11 @@ spec.loader.exec_module(bearer_token_finder)
 
 from datetime import datetime
 
-# --- Webshare API Configuration ---
-WEBSHARE_API_TOKEN = "wemj46xw6m0q876m6i4x65j434bsh735dbef70hc"
-
-def fetch_webshare_proxies(api_token, page_size=1000):
-    """Fetch proxy list from Webshare API"""
-    url = f"https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size={page_size}"
-    headers = {"Authorization": f"Token {api_token}"}
-    try:
-        resp = requests.get(url, headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
-        proxies = []
-        for p in data.get("results", []):
-            if p.get("valid"):
-                proxy_url = f"http://{p['username']}:{p['password']}@{p['proxy_address']}:{p['port']}"
-                proxies.append({"http": proxy_url, "https": proxy_url})
-        safe_print(f"[PROXY API] Fetched {len(proxies)} valid proxies from Webshare")
-        return proxies
-    except Exception as e:
-        safe_print(f"[PROXY API ERROR] Failed to fetch proxies: {e}")
-        return []
-
-def is_proxy_forbidden(response_text):
-    """Check if response indicates proxy is forbidden/blocked"""
-    if not response_text:
-        return False
-    forbidden_signals = ["forbidden", "insufficient flow", "errorMsg"]
-    return any(sig in response_text.lower() for sig in forbidden_signals)
-
-def is_block_page(html):
-    """Check if page is a block/captcha page"""
-    if not html:
-        return False
-    import re
-    match = re.search(r'<title>\s*ShieldSquare Captcha\s*</title>', html, re.IGNORECASE)
-    return bool(match)
-
-async def test_single_proxy(session, proxy_config):
-    """Test a single proxy with realistic URLs that match actual scraping patterns"""
-    # Test URLs that are similar to what we'll actually scrape
-    test_urls = [
-        "https://www.njuskalo.hr/prodaja-stanova/brodsko-posavska",
-        "https://www.njuskalo.hr/prodaja-stanova/bjelovarsko-bilogorska", 
-        "https://www.njuskalo.hr/prodaja-stanova/dubrovacko-neretvanska"
-    ]
-    
-    # Test with one random URL to avoid patterns
-    import random
-    test_url = random.choice(test_urls)
-    
-    try:
-        response = await asyncio.wait_for(
-            session.get(test_url, headers=HEADERS, cookies=COOKIES, 
-                      impersonate="chrome110", proxies=proxy_config),
-            timeout=10
-        )
-        response.raise_for_status()
-        html_content = response.text
-        
-        if is_block_page(html_content) or is_proxy_forbidden(html_content):
-            return False
-        return True
-    except:
-        return False
-
-async def test_and_filter_proxies(all_proxies):
-    """Test all proxies and return only working ones"""
-    safe_print(f"[PROXY TEST] Testing {len(all_proxies)} proxies...")
-    working_proxies = []
-    
-    async with AsyncSession() as session:
-        # Test proxies with limited concurrency
-        semaphore = asyncio.Semaphore(5)
-        
-        async def test_proxy_with_semaphore(proxy):
-            async with semaphore:
-                if await test_single_proxy(session, proxy):
-                    working_proxies.append(proxy)
-                    safe_print(f"[PROXY TEST] ✓ Working proxy found: {len(working_proxies)}")
-                return len(working_proxies)
-        
-        tasks = [test_proxy_with_semaphore(proxy) for proxy in all_proxies]
-        await asyncio.gather(*tasks)
-    
-    safe_print(f"[PROXY TEST] Found {len(working_proxies)} working proxies out of {len(all_proxies)}")
-    return working_proxies
-
-# Initialize proxy pool with testing
-async def initialize_working_proxies():
-    """Fetch and test proxies, return only working ones"""
-    all_proxies = fetch_webshare_proxies(WEBSHARE_API_TOKEN)
-    if not all_proxies:
-        safe_print("[PROXY INIT] No proxies fetched, will use local connection only")
-        return []
-    
-    working_proxies = await test_and_filter_proxies(all_proxies)
-    return working_proxies
-
-# This will be set during startup
-PROXY_POOL = []
-proxy_index = 0
-
-# Proxy fallback configuration
-FALLBACK_TO_LOCAL = False  # Set to True to fallback to local, False to try next proxy
-MAX_PROXY_RETRIES = 3  # How many proxies to try before giving up
-
-def get_next_proxy():
-    """Get next proxy from the pool in round-robin fashion"""
-    global proxy_index
-    if not PROXY_POOL:
-        return None
-    proxy = PROXY_POOL[proxy_index]
-    proxy_index = (proxy_index + 1) % len(PROXY_POOL)
-    return proxy
-
-# --- Dynamic rotating proxy config (deprecated - using API now) ---
-# PROXY_CONFIG = {
-#     "http": "http://u07482d15574405cb-zone-custom-region-eu:u07482d15574405cb@118.193.58.115:2334",
-#     "https": "http://u07482d15574405cb-zone-custom-region-eu:u07482d15574405cb@118.193.58.115:2334"
-# }
+# --- Dynamic rotating proxy config ---
+PROXY_CONFIG = {
+    "http": "http://u07482d15574405cb-zone-custom-region-eu:u07482d15574405cb@118.193.58.115:2334",
+    "https": "http://u07482d15574405cb-zone-custom-region-eu:u07482d15574405cb@118.193.58.115:2334"
+}
 
 # --- Configuration ---
 HEADERS = {
@@ -233,9 +117,9 @@ COOKIES = {
 CATEGORIES = [
     # "prodaja-kuca",
     # "iznajmljivanje-kuca",
-    "prodaja-stanova",
+    # "prodaja-stanova",
     # "iznajmljivanje-stanova",
-    # "prodaja-zemljista",
+    "prodaja-zemljista",
     # "zakup-zemljista",
     # "prodaja-poslovnih-prostora",
     # "iznajmljivanje-poslovnih-prostora",
@@ -263,7 +147,13 @@ os.makedirs(CATEGORIES_TREE_DIR, exist_ok=True)
 
 
 # --- Proxy fallback logic ---
-use_local_only = False
+use_local_only = True
+
+def is_proxy_forbidden(response_text):
+    if not response_text:
+        return False
+    forbidden_signals = ["forbidden", "insufficient flow", "errorMsg"]
+    return any(sig in response_text.lower() for sig in forbidden_signals)
 
 
 # --- Concurrency argument ---
@@ -366,80 +256,42 @@ def extract_category_links_from_html(html):
 async def fetch_html(session, url):
     global use_local_only
     timeout = 15  # seconds
-    
-    # If we're already set to local only, use local
-    if use_local_only:
-        try:
+    try:
+        if use_local_only:
+            response = await asyncio.wait_for(
+                session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110"),
+                timeout=timeout
+            )
+        else:
+            response = await asyncio.wait_for(
+                session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=PROXY_CONFIG),
+                timeout=timeout
+            )
+        response.raise_for_status()
+        if is_proxy_forbidden(getattr(response, "text", None)):
+            safe_print(f"[Proxy] Forbidden or quota exceeded, switching permanently to local system...")
+            use_local_only = True
+            # Retry with local system
             response = await asyncio.wait_for(
                 session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110"),
                 timeout=timeout
             )
             response.raise_for_status()
-            response_text = response.text
-            
-            # Check for blocks even on local connection
-            if is_block_page(response_text):
-                safe_print(f"[Local] ShieldSquare block detected on local connection for {url}")
-                return None
-                
-            return response_text
-        except Exception as e:
-            safe_print(f"[fetch_html] Local system failed: {e}")
-            return None
-    
-    # Try proxies first
-    for attempt in range(MAX_PROXY_RETRIES):
-        proxy = get_next_proxy()
-        if not proxy:
-            break  # No proxies available
-            
-        try:
-            response = await asyncio.wait_for(
-                session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=proxy),
-                timeout=timeout
-            )
-            response.raise_for_status()
-            
-            # Check for proxy-specific errors and block detection
-            response_text = getattr(response, "text", None)
-            if is_proxy_forbidden(response_text):
-                safe_print(f"[Proxy {attempt+1}/{MAX_PROXY_RETRIES}] Forbidden response, trying next proxy...")
-                continue
-            
-            # Check for ShieldSquare block - treat as proxy failure
-            if is_block_page(response_text):
-                safe_print(f"[Proxy {attempt+1}/{MAX_PROXY_RETRIES}] ShieldSquare block detected, trying next proxy...")
-                continue
-                
-            return response_text
-            
-        except Exception as e:
-            safe_print(f"[Proxy {attempt+1}/{MAX_PROXY_RETRIES}] Error with proxy: {e}")
-            continue
-    
-    # All proxies failed, decide what to do based on fallback setting
-    if FALLBACK_TO_LOCAL:
-        safe_print(f"[Proxy] All {MAX_PROXY_RETRIES} proxies failed, switching permanently to local system...")
-        use_local_only = True
-        try:
-            response = await asyncio.wait_for(
-                session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110"),
-                timeout=timeout
-            )
-            response.raise_for_status()
-            response_text = response.text
-            
-            # Check for blocks even on fallback local connection
-            if is_block_page(response_text):
-                safe_print(f"[Local Fallback] ShieldSquare block detected on fallback local connection for {url}")
-                return None
-                
-            return response_text
-        except Exception as e2:
-            safe_print(f"[fetch_html] Local system also failed: {e2}")
-            return None
-    else:
-        safe_print(f"[Proxy] All {MAX_PROXY_RETRIES} proxies failed, giving up on this request...")
+        return response.text
+    except Exception as e:
+        safe_print(f"[fetch_html] Error fetching {url}: {e}")
+        if not use_local_only:
+            safe_print(f"[Proxy] Exception, switching permanently to local system...")
+            use_local_only = True
+            try:
+                response = await asyncio.wait_for(
+                    session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110"),
+                    timeout=timeout
+                )
+                response.raise_for_status()
+                return response.text
+            except Exception as e2:
+                safe_print(f"[fetch_html] Local system also failed: {e2}")
         return None
 
 async def fetch_and_save_html(url, out_file, log_dir):
@@ -447,80 +299,36 @@ async def fetch_and_save_html(url, out_file, log_dir):
     t0 = time.time()
     global use_local_only
     async with AsyncSession() as client:
-        status = "FAILED"
-        
-        # If we're already set to local only, use local
-        if use_local_only:
-            try:
+        try:
+            if use_local_only:
+                response = await client.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110")
+            else:
+                response = await client.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=PROXY_CONFIG)
+            response.raise_for_status()
+            if is_proxy_forbidden(getattr(response, "text", None)):
+                safe_print(f"[Proxy] Forbidden or quota exceeded, switching permanently to local system...")
+                use_local_only = True
                 response = await client.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110")
                 response.raise_for_status()
-                response_text = response.text
-                
-                # Check for blocks even on local connection
-                if is_block_page(response_text):
-                    safe_print(f"[Local] ShieldSquare block detected on local connection for {url}")
-                    status = "FAILED"
-                else:
-                    with open(out_file, "w", encoding="utf-8") as f:
-                        f.write(response_text)
-                    status = "SUCCESS"
-            except Exception as e:
-                safe_print(f"Error scraping with local system: {e}")
-                status = "FAILED"
-        else:
-            # Try proxies first
-            for attempt in range(MAX_PROXY_RETRIES):
-                proxy = get_next_proxy()
-                if not proxy:
-                    break  # No proxies available
-                    
-                try:
-                    response = await client.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=proxy)
-                    response.raise_for_status()
-                    
-                    # Check for proxy-specific errors and block detection
-                    response_text = response.text
-                    if is_proxy_forbidden(response_text):
-                        safe_print(f"[Proxy {attempt+1}/{MAX_PROXY_RETRIES}] Forbidden response, trying next proxy...")
-                        continue
-                    
-                    # Check for ShieldSquare block - treat as proxy failure
-                    if is_block_page(response_text):
-                        safe_print(f"[Proxy {attempt+1}/{MAX_PROXY_RETRIES}] ShieldSquare block detected, trying next proxy...")
-                        continue
-                        
-                    with open(out_file, "w", encoding="utf-8") as f:
-                        f.write(response_text)
-                    status = "SUCCESS"
-                    break
-                    
-                except Exception as e:
-                    safe_print(f"[Proxy {attempt+1}/{MAX_PROXY_RETRIES}] Error with proxy: {e}")
-                    continue
-            
-            # All proxies failed, decide what to do based on fallback setting
-            if status == "FAILED" and FALLBACK_TO_LOCAL:
-                safe_print(f"[Proxy] All {MAX_PROXY_RETRIES} proxies failed, switching permanently to local system...")
+            with open(out_file, "w", encoding="utf-8") as f:
+                f.write(response.text)
+            status = "SUCCESS"
+        except Exception as e:
+            safe_print(f"Error scraping {url}: {e}")
+            if not use_local_only:
+                safe_print(f"[Proxy] Exception, switching permanently to local system...")
                 use_local_only = True
                 try:
                     response = await client.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110")
                     response.raise_for_status()
-                    response_text = response.text
-                    
-                    # Check for blocks even on fallback local connection
-                    if is_block_page(response_text):
-                        safe_print(f"[Local Fallback] ShieldSquare block detected on fallback local connection for {url}")
-                        status = "FAILED"
-                    else:
-                        with open(out_file, "w", encoding="utf-8") as f:
-                            f.write(response_text)
-                        status = "SUCCESS"
+                    with open(out_file, "w", encoding="utf-8") as f:
+                        f.write(response.text)
+                    status = "SUCCESS"
                 except Exception as e2:
                     safe_print(f"Error scraping with local system: {e2}")
                     status = "FAILED"
-            elif status == "FAILED":
-                safe_print(f"[Proxy] All {MAX_PROXY_RETRIES} proxies failed, giving up on this request...")
-        
+            else:
+                status = "FAILED"
         duration_ms = int((time.time() - t0) * 1000)
         timestamp = datetime.now().isoformat()
         log_line = f"{timestamp} HTML EXTRACTION {os.path.basename(out_file)} {status} {duration_ms}ms\n"
@@ -564,17 +372,28 @@ async def build_category_tree(session, url, name, depth=0, max_depth=10, logger=
         # If not set, use the first name in parent_names or current name
         main_category = parent_names[0] if parent_names else name
     # Block detection and retry logic
+    def is_block_page(html):
+        if not html:
+            return False
+        # Only match <title>ShieldSquare Captcha</title>
+        import re
+        match = re.search(r'<title>\s*ShieldSquare Captcha\s*</title>', html, re.IGNORECASE)
+        return bool(match)
+
     html = None
     async with SEM:
         html = await fetch_html(session, url)
-    
+    if is_block_page(html):
+        safe_print(f"[BLOCK DETECTED] {name} ({url}) - Exiting script and pausing for 1 minute...")
+        await asyncio.sleep(60)
+        sys.exit(99)  # Custom exit code for blockage
+
     # Save HTML for every node, even if it's None or error response
     try:
         with open(html_file_path, "w", encoding="utf-8") as f:
             f.write(html if html is not None else "")
     except Exception as e:
         safe_print(f"[ERROR] Could not save HTML for {name}: {e}")
-    
     if not html or is_block_page(html):
         # Try to get error code from previous fetch attempt (if available)
         error_code = getattr(session, 'last_status', None)
@@ -667,20 +486,8 @@ async def build_category_tree(session, url, name, depth=0, max_depth=10, logger=
     return {"name": name, "url": url, "children": tree_children}
 
 
+
 async def main_category_tree_scrape():
-    global PROXY_POOL
-    
-    # Initialize working proxies first
-    safe_print("=" * 80)
-    safe_print("INITIALIZING PROXY POOL")
-    safe_print("=" * 80)
-    PROXY_POOL = await initialize_working_proxies()
-    if PROXY_POOL:
-        safe_print(f"✓ {len(PROXY_POOL)} working proxies ready for scraping")
-    else:
-        safe_print("⚠️  No working proxies found, will use local connection only")
-    safe_print("=" * 80)
-    
     # Checkpoint setup
     CHECKPOINTS_DIR = os.path.join(os.path.dirname(__file__), "checkpoints")
     os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
