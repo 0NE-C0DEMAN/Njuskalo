@@ -1,0 +1,8 @@
+{
+    "include": ["app"],
+    "exclude": [ "**/__pycache__", ".venv"],
+    "reportMissingImports": false,
+    "reportGeneralTypeIssues": false,
+    "reportOptionalMemberAccess": false,
+    "typeCheckingMode": "off"
+}

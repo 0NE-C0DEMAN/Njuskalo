@@ -1,0 +1,45 @@
+{
+  "id": "47399010",
+  "link": "https://www.njuskalo.hr/nekretnine/kuca-brocice-103.00-m2-oglas-47399010",
+  "lokacija": {
+    "lat": 45.34087967800538,
+    "lng": 16.981604171712696,
+    "approximate": true
+  },
+  "naslov": "Kuća: Bročice, 103.00 m2 (prodaja)",
+  "cijena": "90.000 €",
+  "Lokacija": "Sisačko-moslavačka, Novska, Bročice",
+  "Tip kuće": "Samostojeća",
+  "Broj etaža": "Katnica",
+  "Vrsta kuće (gradnje)": "Zidana kuća (beton, opeka)",
+  "Broj soba": "5",
+  "Stambena površina": "103,00 m²",
+  "Netto površina": "103,00 m²",
+  "Površina okućnice": "2.962,00 m²",
+  "Agencijsku proviziju plaća": "Prodavatelj",
+  "opis": "Prodajem kuću stambene površine 103m2, garaža 21m2, gospodarska zgrada 34m2, dvorište 662m2, oranica 2306m2, Gradski plin, vodovod, kanalizacija.",
+  "Grijanje": [
+    "Sustav grijanja: Peć na plin",
+    "Dodatni izvor grijanja: Da"
+  ],
+  "Podaci o objektu": [
+    "Gradski plin",
+    "Gradski vodovod",
+    "Gradska kanalizacija"
+  ],
+  "Vrsta parkinga": [
+    "Garaža"
+  ],
+  "Kupaonica i WC": [
+    "Broj kupaonica s WC-om: 1"
+  ],
+  "naziv_agencije": "istivic",
+  "profil_agencije": "https://www.njuskalo.hr/korisnik/istivic",
+  "adresa_agencije": "Adresa:Grad Zagreb, Hrvatska",
+  "telefon": "098 989 8419",
+  "oglas_objavljen": "28.06.2025. u 20:54",
+  "oglas_prikazan": "870 puta",
+  "slike": [
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-brocice-103.00-m2-slika-253075449.jpg"
+  ]
+}

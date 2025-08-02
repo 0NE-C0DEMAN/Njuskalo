@@ -1,0 +1,80 @@
+{
+  "id": "46880587",
+  "link": "https://www.njuskalo.hr/nekretnine/kuca-slavonski-brod-170.00-m2-oglas-46880587",
+  "lokacija": {
+    "lat": 45.147220962165065,
+    "lng": 18.033207059088223,
+    "approximate": true
+  },
+  "naslov": "Kuća: Slavonski Brod, 170.00 m2 (prodaja)",
+  "cijena": "212.000 €",
+  "Lokacija": "Brodsko-posavska, Slavonski Brod, Mikrorajon",
+  "Tip kuće": "Samostojeća",
+  "Broj etaža": "Katnica",
+  "Vrsta kuće (gradnje)": "Zidana kuća (beton, opeka)",
+  "Broj soba": "6",
+  "Stambena površina": "170,00 m²",
+  "Netto površina": "170,00 m²",
+  "Površina okućnice": "656,00 m²",
+  "Namještenost i stanje": "Djelomično namješteno",
+  "Balkon/Lođa/Terasa": "Balkon",
+  "Šifra objekta": "2608",
+  "opis": "Prodaje se katnica u naselju Mikrorajon. Smještena na lijepoj pravokutnoj čestici ukupne površine 656 m2 (širina fronte 16m). Kuća se sastoji od prostranog dnevnog boravka u sklopu kojega je i kuhinja, 2 spavaće sobe, kupatila i ostave na prvoj etaži te 2 spavaće sobe, kupatila i prostranog dnevnog boravka na drugoj etaži. Također posjeduje i podrumsku prostoriju. Prodaje se djelomično namještena. U dvorištu se nalaze 2 pomoćne zgrade. Spomenuta posjeduje priključke vode, struje te kanalizacije, plin prošao ulicom (trenutni sustav grijanja je na kruta goriva). Čista i uredna dokumentacija kako za kuću tako i za 2 pomoćna objekta te je moguća kupnja putem kredita.",
+  "Grijanje": [
+    "Sustav grijanja: Peć na drva",
+    "Klima uređaj: Da"
+  ],
+  "Podaci o objektu": [
+    "Gradski plin",
+    "Gradski vodovod",
+    "Gradska kanalizacija"
+  ],
+  "Dozvole i potvrde": [
+    "Vlasnički list",
+    "Građevinska dozvola",
+    "Uporabna dozvola"
+  ],
+  "Vrsta parkinga": [
+    "Garaža",
+    "Vanjsko natkriveno mjesto",
+    "Besplatni javni parking"
+  ],
+  "Kupaonica i WC": [
+    "Broj kupaonica s WC-om: 2",
+    "Broj WC-a: 2"
+  ],
+  "Ostali objekti i površine": [
+    "Dvorište/vrt",
+    "Podrum",
+    "Spremište/šupa",
+    "Roštilj"
+  ],
+  "naziv_agencije": "LONDON NEKRETNINE",
+  "profil_agencije": "https://www.njuskalo.hr/agencija/london-nekretnine",
+  "email_agencije": "londonnekretnine@gmail.com",
+  "adresa_agencije": "Adresa:Ivana Mažuranića 10, 35000 Slavonski Brod, Brodsko-posavska, Hrvatska",
+  "telefon": "091 908 3445",
+  "oglas_objavljen": "21.07.2025. u 10:13",
+  "do_isteka": "do prodaje",
+  "oglas_prikazan": "2074 puta",
+  "slike": [
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605825.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605823.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605832.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605829.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605806.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605834.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605810.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605819.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605827.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605831.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605817.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605812.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605836.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605815.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605818.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605813.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605814.jpg",
+    "https://www.njuskalo.hr/image-xlsize/nekretnine/kuca-slavonski-brod-170.00-m2-slika-247605808.jpg"
+  ]
+}
