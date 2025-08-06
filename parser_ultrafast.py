@@ -28,13 +28,13 @@ EXIT_PARSING_ERROR = 3
 EXIT_FS_ERROR = 4
 
 # Optimized Configuration - Use all available cores
-BATCH_SIZE = 400  # Much larger batches
-MAX_WORKERS = 8  # Use all CPU cores
+BATCH_SIZE = 200  # Much larger batches
+MAX_WORKERS = cpu_count()  # Use all CPU cores
 CHUNK_SIZE = 50  # Files per worker chunk
 
 # Pre-compiled regex patterns for speed
 LAT_LNG_PATTERN = re.compile(r'"lat":([\d\.-]+),"lng":([\d\.-]+),"approximate":(true|false)')
-AD_ID_PATTERN = re.compile(r'^(\d+)_')
+AD_ID_PATTERN = re.compile(r'^(\d+)\.html$')
 
 # Global database connection cache to avoid repeated DB connections
 _db_cache = {}
@@ -89,7 +89,8 @@ def process_single_file_ultrafast(filename):
         except:
             soup = BeautifulSoup(html, "html.parser")
 
-        oglas_id = base_filename.split("_")[0]
+        # Extract ad_id from filename (now just the number before .html)
+        oglas_id = base_filename
         podaci = {"id": oglas_id}
 
         # Canonical link - single selector

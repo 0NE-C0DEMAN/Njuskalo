@@ -28,12 +28,81 @@ spec.loader.exec_module(bearer_token_finder)
 
 
 from datetime import datetime
+import threading
 
-# --- Dynamic rotating proxy config ---
-PROXY_CONFIG = {
-    "http": "http://u07482d15574405cb-zone-custom-region-eu:u07482d15574405cb@118.193.58.115:2334",
-    "https": "http://u07482d15574405cb-zone-custom-region-eu:u07482d15574405cb@118.193.58.115:2334"
-}
+# --- Load proxies from file ---
+def load_proxies_from_file():
+    """Load proxies from proxies.txt file"""
+    proxies = []
+    proxy_file = os.path.join(os.path.dirname(__file__), "proxies.txt")
+    try:
+        with open(proxy_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    # Format: ip:port:username:password
+                    parts = line.split(":")
+                    if len(parts) == 4:
+                        ip, port, username, password = parts
+                        proxy_dict = {
+                            "http": f"http://{username}:{password}@{ip}:{port}",
+                            "https": f"http://{username}:{password}@{ip}:{port}"
+                        }
+                        proxies.append(proxy_dict)
+        print(f"[PROXY] Loaded {len(proxies)} proxies from {proxy_file}")
+        return proxies
+    except Exception as e:
+        print(f"[PROXY ERROR] Could not load proxies: {e}")
+        return []
+
+# --- Cycling system variables ---
+LOADED_PROXIES = load_proxies_from_file()
+current_proxy_index = 0
+proxy_rotation_lock = threading.Lock()
+
+# Timing for cycling system
+LOCAL_SCRAPING_DURATION = 10 * 60  # 10 minutes
+PROXY_SCRAPING_DURATION = 5 * 60   # 5 minutes
+cycle_start_time = time.time()
+is_using_local = True  # Start with local
+
+def get_next_proxy():
+    """Get the next proxy in rotation"""
+    global current_proxy_index
+    if not LOADED_PROXIES:
+        return None
+    
+    with proxy_rotation_lock:
+        proxy = LOADED_PROXIES[current_proxy_index]
+        current_proxy_index = (current_proxy_index + 1) % len(LOADED_PROXIES)
+        return proxy
+
+def should_use_local_connection():
+    """Determine if we should use local connection based on cycling schedule"""
+    global cycle_start_time, is_using_local
+    
+    current_time = time.time()
+    elapsed_time = current_time - cycle_start_time
+    
+    if is_using_local:
+        # Currently using local for 10 minutes
+        if elapsed_time >= LOCAL_SCRAPING_DURATION:
+            # Switch to proxy mode
+            is_using_local = False
+            cycle_start_time = current_time
+            print(f"[CYCLE] Switching to PROXY mode for {PROXY_SCRAPING_DURATION//60} minutes")
+            return False
+        return True
+    else:
+        # Currently using proxy for 5 minutes
+        if elapsed_time >= PROXY_SCRAPING_DURATION:
+            # Switch to local mode
+            is_using_local = True
+            cycle_start_time = current_time
+            print(f"[CYCLE] Switching to LOCAL mode for {LOCAL_SCRAPING_DURATION//60} minutes")
+            return True
+        return False
+
 
 # --- Configuration ---
 HEADERS = {
@@ -115,22 +184,22 @@ COOKIES = {
 
 # --- Category list to scrape ---
 CATEGORIES = [
-    # "prodaja-kuca",
-    # "iznajmljivanje-kuca",
-    # "prodaja-stanova",
-    # "iznajmljivanje-stanova",
+    "prodaja-kuca",
+    "iznajmljivanje-kuca",
+    "prodaja-stanova",
+    "iznajmljivanje-stanova",
     "prodaja-zemljista",
-    # "zakup-zemljista",
-    # "prodaja-poslovnih-prostora",
-    # "iznajmljivanje-poslovnih-prostora",
-    # "novogradnja",                                    # currently running only for this category for testing. uncomment all to test for full run.
-    # "vikendice",
-    # "montazni-objekti",
-    # "prodaja-luksuznih-nekretnina",
-    # "iznajmljivanje-luksuznih-nekretnina",
-    # "prodaja-garaza",
-    # "iznajmljivanje-garaza",
-    # "iznajmljivanje-soba",
+    "zakup-zemljista",
+    "prodaja-poslovnih-prostora",
+    "iznajmljivanje-poslovnih-prostora",
+    "novogradnja",                                    # currently running only for this category for testing. uncomment all to test for full run.
+    "vikendice",
+    "montazni-objekti",
+    "prodaja-luksuznih-nekretnina",
+    "iznajmljivanje-luksuznih-nekretnina",
+    "prodaja-garaza",
+    "iznajmljivanje-garaza",
+    "iznajmljivanje-soba",
     # "cimeri"
 ]
 
@@ -146,20 +215,17 @@ os.makedirs(CATEGORIES_LOGS_DIR, exist_ok=True)
 os.makedirs(CATEGORIES_TREE_DIR, exist_ok=True)
 
 
-# --- Proxy fallback logic ---
-use_local_only = True
-
 def is_proxy_forbidden(response_text):
+    """Check if proxy response indicates blocking or forbidden access"""
     if not response_text:
         return False
     forbidden_signals = ["forbidden", "insufficient flow", "errorMsg"]
     return any(sig in response_text.lower() for sig in forbidden_signals)
 
-
 # --- Concurrency argument ---
 def get_concurrency():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--concurrency', type=int, default=15, help='Number of concurrent requests (default: 4)')
+    parser.add_argument('--concurrency', type=int, default=10, help='Number of concurrent requests (default: 4)')
     args, _ = parser.parse_known_args()
     return args.concurrency
 
@@ -254,81 +320,161 @@ def extract_category_links_from_html(html):
     return links
 
 async def fetch_html(session, url):
-    global use_local_only
-    timeout = 15  # seconds
+    """Fetch HTML with cycling between local and proxy connections"""
+    timeout = 10  # seconds
+    
+    use_local = should_use_local_connection()
+    
     try:
-        if use_local_only:
+        if use_local:
+            print(f"[LOCAL] Fetching {url}")
             response = await asyncio.wait_for(
                 session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110"),
                 timeout=timeout
             )
         else:
-            response = await asyncio.wait_for(
-                session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=PROXY_CONFIG),
-                timeout=timeout
-            )
-        response.raise_for_status()
-        if is_proxy_forbidden(getattr(response, "text", None)):
-            safe_print(f"[Proxy] Forbidden or quota exceeded, switching permanently to local system...")
-            use_local_only = True
-            # Retry with local system
-            response = await asyncio.wait_for(
-                session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110"),
-                timeout=timeout
-            )
-            response.raise_for_status()
-        return response.text
-    except Exception as e:
-        safe_print(f"[fetch_html] Error fetching {url}: {e}")
-        if not use_local_only:
-            safe_print(f"[Proxy] Exception, switching permanently to local system...")
-            use_local_only = True
-            try:
+            # Use proxy from loaded proxy list
+            current_proxy = get_next_proxy()
+            if current_proxy:
+                proxy_info = current_proxy["http"].split("@")[1] if "@" in current_proxy["http"] else "unknown"
+                print(f"[PROXY] Fetching {url} via {proxy_info}")
+                response = await asyncio.wait_for(
+                    session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=current_proxy),
+                    timeout=timeout
+                )
+            else:
+                # No proxies available, fallback to local
+                print(f"[LOCAL FALLBACK] No proxies available, using local for {url}")
                 response = await asyncio.wait_for(
                     session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110"),
                     timeout=timeout
                 )
-                response.raise_for_status()
-                return response.text
-            except Exception as e2:
-                safe_print(f"[fetch_html] Local system also failed: {e2}")
+        
+        response.raise_for_status()
+        text = getattr(response, "text", "")
+        
+        # Check for proxy-specific blocks
+        if is_proxy_forbidden(text):
+            if not use_local:
+                print(f"[PROXY BLOCKED] Proxy blocked, trying next proxy...")
+                # Try next proxy
+                next_proxy = get_next_proxy()
+                if next_proxy:
+                    proxy_info = next_proxy["http"].split("@")[1] if "@" in next_proxy["http"] else "unknown"
+                    print(f"[PROXY RETRY] Trying next proxy {proxy_info}")
+                    response = await asyncio.wait_for(
+                        session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=next_proxy),
+                        timeout=timeout
+                    )
+                    response.raise_for_status()
+                    text = getattr(response, "text", "")
+                    
+                    if is_proxy_forbidden(text):
+                        print(f"[PROXY FAILED] Next proxy also blocked, continuing with current response")
+                else:
+                    print(f"[PROXY EXHAUSTED] No more proxies available")
+        
+        return text
+        
+    except Exception as e:
+        safe_print(f"[fetch_html] Error fetching {url}: {e}")
+        
+        if not use_local:
+            print(f"[PROXY ERROR] Exception with proxy, trying next proxy...")
+            # Try next proxy on error
+            next_proxy = get_next_proxy()
+            if next_proxy:
+                try:
+                    proxy_info = next_proxy["http"].split("@")[1] if "@" in next_proxy["http"] else "unknown"
+                    print(f"[PROXY RETRY] Trying next proxy {proxy_info}")
+                    response = await asyncio.wait_for(
+                        session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=next_proxy),
+                        timeout=timeout
+                    )
+                    response.raise_for_status()
+                    return getattr(response, "text", "")
+                except Exception as e2:
+                    safe_print(f"[PROXY RETRY FAILED] Next proxy also failed: {e2}")
+        
         return None
 
 async def fetch_and_save_html(url, out_file, log_dir):
+    """Fetch and save HTML with cycling between local and proxy connections"""
     import time
     t0 = time.time()
-    global use_local_only
+    
     async with AsyncSession() as client:
         try:
-            if use_local_only:
+            use_local = should_use_local_connection()
+            
+            if use_local:
+                print(f"[LOCAL] Fetching and saving {url}")
                 response = await client.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110")
             else:
-                response = await client.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=PROXY_CONFIG)
+                # Use proxy from loaded proxy list
+                current_proxy = get_next_proxy()
+                if current_proxy:
+                    proxy_info = current_proxy["http"].split("@")[1] if "@" in current_proxy["http"] else "unknown"
+                    print(f"[PROXY] Fetching and saving {url} via {proxy_info}")
+                    response = await asyncio.wait_for(
+                        client.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=current_proxy),
+                        timeout=10
+                    )
+                else:
+                    # No proxies available, fallback to local
+                    print(f"[LOCAL FALLBACK] No proxies available, using local for {url}")
+                    response = await client.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110")
+            
             response.raise_for_status()
-            if is_proxy_forbidden(getattr(response, "text", None)):
-                safe_print(f"[Proxy] Forbidden or quota exceeded, switching permanently to local system...")
-                use_local_only = True
-                response = await client.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110")
-                response.raise_for_status()
+            text = getattr(response, "text", "")
+            
+            # Check for proxy-specific blocks
+            if is_proxy_forbidden(text):
+                if not use_local:
+                    print(f"[PROXY BLOCKED] Proxy blocked, trying next proxy...")
+                    # Try next proxy
+                    next_proxy = get_next_proxy()
+                    if next_proxy:
+                        proxy_info = next_proxy["http"].split("@")[1] if "@" in next_proxy["http"] else "unknown"
+                        print(f"[PROXY RETRY] Trying next proxy {proxy_info}")
+                        response = await asyncio.wait_for(
+                            client.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=next_proxy),
+                            timeout=10
+                        )
+                        response.raise_for_status()
+                        text = getattr(response, "text", "")
+            
             with open(out_file, "w", encoding="utf-8") as f:
-                f.write(response.text)
+                f.write(text)
             status = "SUCCESS"
+            
         except Exception as e:
             safe_print(f"Error scraping {url}: {e}")
-            if not use_local_only:
-                safe_print(f"[Proxy] Exception, switching permanently to local system...")
-                use_local_only = True
-                try:
-                    response = await client.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110")
-                    response.raise_for_status()
-                    with open(out_file, "w", encoding="utf-8") as f:
-                        f.write(response.text)
-                    status = "SUCCESS"
-                except Exception as e2:
-                    safe_print(f"Error scraping with local system: {e2}")
+            
+            if not should_use_local_connection():
+                print(f"[PROXY ERROR] Exception with proxy, trying next proxy...")
+                # Try next proxy on error
+                next_proxy = get_next_proxy()
+                if next_proxy:
+                    try:
+                        proxy_info = next_proxy["http"].split("@")[1] if "@" in next_proxy["http"] else "unknown"
+                        print(f"[PROXY RETRY] Trying next proxy {proxy_info}")
+                        response = await asyncio.wait_for(
+                            client.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=next_proxy),
+                            timeout=10
+                        )
+                        response.raise_for_status()
+                        with open(out_file, "w", encoding="utf-8") as f:
+                            f.write(response.text)
+                        status = "SUCCESS"
+                    except Exception as e2:
+                        safe_print(f"Error scraping with next proxy: {e2}")
+                        status = "FAILED"
+                else:
                     status = "FAILED"
             else:
                 status = "FAILED"
+        
         duration_ms = int((time.time() - t0) * 1000)
         timestamp = datetime.now().isoformat()
         log_line = f"{timestamp} HTML EXTRACTION {os.path.basename(out_file)} {status} {duration_ms}ms\n"

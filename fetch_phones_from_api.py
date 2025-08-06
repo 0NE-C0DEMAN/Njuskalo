@@ -57,8 +57,8 @@ def save_phones_to_db(ad_id, phone_list):
 
 
 
-# Extract ad id as the number at the start of the filename before the first underscore
-ad_id_re = re.compile(r"^([0-9]+)_")
+# Extract ad id as the number from the filename (before .html extension)
+ad_id_re = re.compile(r"^([0-9]+)\.html$")
 
 # Njuskalo phone API endpoint
 def phone_api_url(ad_id):
@@ -116,7 +116,7 @@ def find_all_html_files():
 
 
 def extract_ad_id_from_filename(filename):
-    # Normalize path separators and just use the filename
+    # Extract ad_id from filename format: "12345.html"
     fname = os.path.basename(filename)
     m = ad_id_re.match(fname)
     return m.group(1) if m else None

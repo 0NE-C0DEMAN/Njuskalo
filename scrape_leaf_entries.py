@@ -3,11 +3,11 @@ def phone_already_in_db(ad_id, conn):
     cursor.execute("SELECT 1 FROM phones WHERE ad_id=? LIMIT 1", (ad_id,))
     return cursor.fetchone() is not None
 
-# --- Imports and config ---
 import os
 import json
 import asyncio
 import random
+import threading
 
 import sys
 import time
@@ -25,6 +25,79 @@ import importlib.util
 spec = importlib.util.spec_from_file_location("bearer_token_finder", os.path.join(os.path.dirname(__file__), "bearer_token_finder.py"))
 bearer_token_finder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bearer_token_finder)
+
+# --- Load proxies from file ---
+def load_proxies_from_file():
+    """Load proxies from proxies.txt file"""
+    proxies = []
+    proxy_file = os.path.join(os.path.dirname(__file__), "proxies.txt")
+    try:
+        with open(proxy_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    # Format: ip:port:username:password
+                    parts = line.split(":")
+                    if len(parts) == 4:
+                        ip, port, username, password = parts
+                        proxy_dict = {
+                            "http": f"http://{username}:{password}@{ip}:{port}",
+                            "https": f"http://{username}:{password}@{ip}:{port}"
+                        }
+                        proxies.append(proxy_dict)
+        print(f"[PROXY] Loaded {len(proxies)} proxies from {proxy_file}")
+        return proxies
+    except Exception as e:
+        print(f"[PROXY ERROR] Could not load proxies: {e}")
+        return []
+
+# --- Cycling system variables ---
+LOADED_PROXIES = load_proxies_from_file()
+current_proxy_index = 0
+proxy_rotation_lock = threading.Lock()
+
+# Timing for cycling system
+LOCAL_SCRAPING_DURATION = 10 * 60  # 10 minutes
+PROXY_SCRAPING_DURATION = 5 * 60   # 5 minutes
+cycle_start_time = time.time()
+is_using_local = True  # Start with local
+
+def get_next_proxy():
+    """Get the next proxy in rotation"""
+    global current_proxy_index
+    if not LOADED_PROXIES:
+        return None
+    
+    with proxy_rotation_lock:
+        proxy = LOADED_PROXIES[current_proxy_index]
+        current_proxy_index = (current_proxy_index + 1) % len(LOADED_PROXIES)
+        return proxy
+
+def should_use_local_connection():
+    """Determine if we should use local connection based on cycling schedule"""
+    global cycle_start_time, is_using_local
+    
+    current_time = time.time()
+    elapsed_time = current_time - cycle_start_time
+    
+    if is_using_local:
+        # Currently using local for 10 minutes
+        if elapsed_time >= LOCAL_SCRAPING_DURATION:
+            # Switch to proxy mode
+            is_using_local = False
+            cycle_start_time = current_time
+            print(f"[CYCLE] Switching to PROXY mode for {PROXY_SCRAPING_DURATION//60} minutes")
+            return False
+        return True
+    else:
+        # Currently using proxy for 5 minutes
+        if elapsed_time >= PROXY_SCRAPING_DURATION:
+            # Switch to local mode
+            is_using_local = True
+            cycle_start_time = current_time
+            print(f"[CYCLE] Switching to LOCAL mode for {LOCAL_SCRAPING_DURATION//60} minutes")
+            return True
+        return False
 
 def extract_ad_id(url):
     """Extract ad ID from Njuskalo URL for cleaner logging"""
@@ -98,112 +171,7 @@ os.makedirs(CATEGORIES_LOGS_DIR, exist_ok=True)
 os.makedirs(CATEGORIES_HTMLS_DIR, exist_ok=True)
 os.makedirs(CATEGORIES_TREE_DIR, exist_ok=True)
 CONCURRENT_LEAFS = 1
-CONCURRENT_ENTRIES = 8
-
- # ...existing code...
-
-# --- Webshare Backbone Proxy Configuration ---
-WEBSHARE_BACKBONE_PROXIES = [
-    {
-        "http": "http://pmeeribz-1:rokv131zvsqe@p.webshare.io:80/",
-        "https": "http://pmeeribz-1:rokv131zvsqe@p.webshare.io:80/"
-    },
-    {
-        "http": "http://pmeeribz-2:rokv131zvsqe@p.webshare.io:80/",
-        "https": "http://pmeeribz-2:rokv131zvsqe@p.webshare.io:80/"
-    },
-    {
-        "http": "http://pmeeribz-3:rokv131zvsqe@p.webshare.io:80/",
-        "https": "http://pmeeribz-3:rokv131zvsqe@p.webshare.io:80/"
-    },
-    {
-        "http": "http://pmeeribz-4:rokv131zvsqe@p.webshare.io:80/",
-        "https": "http://pmeeribz-4:rokv131zvsqe@p.webshare.io:80/"
-    },
-    {
-        "http": "http://pmeeribz-5:rokv131zvsqe@p.webshare.io:80/",
-        "https": "http://pmeeribz-5:rokv131zvsqe@p.webshare.io:80/"
-    },
-    {
-        "http": "http://pmeeribz-6:rokv131zvsqe@p.webshare.io:80/",
-        "https": "http://pmeeribz-6:rokv131zvsqe@p.webshare.io:80/"
-    },
-    {
-        "http": "http://pmeeribz-7:rokv131zvsqe@p.webshare.io:80/",
-        "https": "http://pmeeribz-7:rokv131zvsqe@p.webshare.io:80/"
-    },
-    {
-        "http": "http://pmeeribz-8:rokv131zvsqe@p.webshare.io:80/",
-        "https": "http://pmeeribz-8:rokv131zvsqe@p.webshare.io:80/"
-    },
-    {
-        "http": "http://pmeeribz-9:rokv131zvsqe@p.webshare.io:80/",
-        "https": "http://pmeeribz-9:rokv131zvsqe@p.webshare.io:80/"
-    },
-    {
-        "http": "http://pmeeribz-10:rokv131zvsqe@p.webshare.io:80/",
-        "https": "http://pmeeribz-10:rokv131zvsqe@p.webshare.io:80/"
-    }
-]
-
-# Current proxy index for rotation
-current_proxy_index = 0
-
-def get_next_proxy():
-    """Get the next proxy in rotation"""
-    global current_proxy_index
-    proxy = WEBSHARE_BACKBONE_PROXIES[current_proxy_index]
-    current_proxy_index = (current_proxy_index + 1) % len(WEBSHARE_BACKBONE_PROXIES)
-    return proxy
-
-# Request tracking - simplified for per-request proxy usage
-total_request_count = 0
-local_request_count = 0
-proxy_request_count = 0
-
-# Weighted proxy selection: 70% local, 30% backbone proxy (per request)
-LOCAL_WEIGHT = 0.70  # 70% chance to use local
-PROXY_WEIGHT = 0.30  # 30% chance to use backbone proxy
-
-def should_use_local():
-    """Determine if we should use local connection for this single request"""
-    global total_request_count, local_request_count, proxy_request_count
-    
-    # Simple weighted random choice for each request
-    use_local = random.random() < LOCAL_WEIGHT
-    
-    # Update counters
-    total_request_count += 1
-    if use_local:
-        local_request_count += 1
-    else:
-        proxy_request_count += 1
-    
-    return use_local
-
-def get_connection_stats():
-    """Get statistics about connection usage"""
-    global total_request_count, local_request_count, proxy_request_count
-    if total_request_count == 0:
-        return "No requests made yet"
-    
-    local_pct = (local_request_count / total_request_count) * 100 if total_request_count > 0 else 0
-    proxy_pct = (proxy_request_count / total_request_count) * 100 if total_request_count > 0 else 0
-    return f"Stats: {local_request_count} local ({local_pct:.1f}%), {proxy_request_count} backbone proxy ({proxy_pct:.1f}%) out of {total_request_count} total"
-
-# --- Dynamic backbone proxy config ---
-PROXY_CONFIG = WEBSHARE_BACKBONE_PROXIES[0]  # Default to first proxy
-
-# --- Proxy fallback logic with enhanced anti-detection ---
-PROXY_LIST = [
-    None,  # Local system (no proxy) - PRIORITIZED due to test results
-    WEBSHARE_BACKBONE_PROXIES  # Webshare backbone proxies
-]
-
-# Enhanced proxy management based on test results
-use_local_only = False  # Allow weighted selection between local and proxy
-proxy_blocked_count = 0
-MAX_PROXY_BLOCKS = 3  # Switch to local permanently after 3 blocks
+CONCURRENT_ENTRIES = 6
 
 import logging
 
@@ -239,107 +207,109 @@ def extract_entry_urls(html):
     return list(set(urls))
 
 async def fetch_html(session, url):
-    global use_local_only, proxy_blocked_count, total_request_count
-    timeout = 15  # seconds
+    """Fetch HTML with cycling between local and proxy connections"""
+    timeout = 10  # seconds
     
-    # Determine connection method for this single request
-    use_local_for_this_request = use_local_only or should_use_local()
-    
-    # Print statistics every 100 requests
-    if total_request_count % 100 == 0:
-        print(f"[STATS] {get_connection_stats()}")
+    use_local = should_use_local_connection()
     
     try:
-        if use_local_for_this_request:
+        if use_local:
             ad_id = extract_ad_id(url)
-            print(f"[LOCAL #{local_request_count}] {ad_id}")
+            print(f"[LOCAL] {ad_id}")
             response = await asyncio.wait_for(
                 session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110"),
                 timeout=timeout
             )
         else:
-            ad_id = extract_ad_id(url)
+            # Use proxy from loaded proxy list
             current_proxy = get_next_proxy()
-            proxy_num = (current_proxy_index - 1) % len(WEBSHARE_BACKBONE_PROXIES) + 1
-            print(f"[BACKBONE PROXY #{proxy_num}] {ad_id}")
-            response = await asyncio.wait_for(
-                session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=current_proxy),
-                timeout=timeout
-            )
+            if current_proxy:
+                ad_id = extract_ad_id(url)
+                proxy_info = current_proxy["http"].split("@")[1] if "@" in current_proxy["http"] else "unknown"
+                print(f"[PROXY] {ad_id} via {proxy_info}")
+                response = await asyncio.wait_for(
+                    session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=current_proxy),
+                    timeout=timeout
+                )
+            else:
+                # No proxies available, fallback to local
+                ad_id = extract_ad_id(url)
+                print(f"[LOCAL FALLBACK] {ad_id}")
+                response = await asyncio.wait_for(
+                    session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110"),
+                    timeout=timeout
+                )
+        
         response.raise_for_status()
         text = getattr(response, "text", "")
         
-        # Enhanced block detection with immediate local fallback
+        # Enhanced block detection with immediate fallback
         import re
         is_shieldsquare_blocked = re.search(r'<title>\s*ShieldSquare Captcha\s*</title>', text, re.IGNORECASE)
         is_general_blocked = is_proxy_forbidden(text)
         
         if is_shieldsquare_blocked or is_general_blocked:
-            if not use_local_for_this_request:
-                proxy_blocked_count += 1
-                logging.warning(f"[Proxy Block #{proxy_blocked_count}] Detected block via rotating proxy, retrying with local...")
+            if not use_local:
+                print(f"[PROXY BLOCKED] Detected block via proxy, trying next proxy...")
                 
-                if proxy_blocked_count >= MAX_PROXY_BLOCKS:
-                    logging.warning(f"[Proxy Disabled] Too many blocks ({proxy_blocked_count}), using local permanently")
-                    use_local_only = True
-                
-                ad_id = extract_ad_id(url)
-                print(f"[FALLBACK] {ad_id} -> LOCAL")
-                response = await asyncio.wait_for(
-                    session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110"),
-                    timeout=timeout
-                )
-                response.raise_for_status()
-                text = getattr(response, "text", "")
+                # Try next proxy
+                next_proxy = get_next_proxy()
+                if next_proxy:
+                    ad_id = extract_ad_id(url)
+                    proxy_info = next_proxy["http"].split("@")[1] if "@" in next_proxy["http"] else "unknown"
+                    print(f"[PROXY RETRY] {ad_id} via {proxy_info}")
+                    response = await asyncio.wait_for(
+                        session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=next_proxy),
+                        timeout=timeout
+                    )
+                    response.raise_for_status()
+                    text = getattr(response, "text", "")
         
         # Final ShieldSquare check after any retries
         if re.search(r'<title>\s*ShieldSquare Captcha\s*</title>', text, re.IGNORECASE):
-            print(f"[BLOCK DETECTED] {url} - Exiting script and pausing for 1 minute...")
+            ad_id = extract_ad_id(url)
+            print(f"[BLOCK DETECTED] {ad_id} - Exiting script and pausing for 1 minute...")
             import sys
             import time
             time.sleep(60)
             sys.exit(99)
         return text
+        
     except Exception as e:
         ad_id = extract_ad_id(url)
         print(f"Error fetching {ad_id}: {e}")
-        if not use_local_for_this_request and not use_local_only:
-            logging.warning(f"[Proxy] Exception with rotating proxy, retrying with local...")
+        
+        if not use_local:
+            print(f"[PROXY ERROR] Exception with proxy, trying next proxy...")
             
             try:
-                print(f"[FALLBACK] {ad_id} -> LOCAL")
-                response = await asyncio.wait_for(
-                    session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110"),
-                    timeout=timeout
-                )
-                response.raise_for_status()
-                text = getattr(response, "text", "")
-                # ShieldSquare block detection
-                import re
-                if re.search(r'<title>\s*ShieldSquare Captcha\s*</title>', text, re.IGNORECASE):
-                    print(f"[BLOCK DETECTED] {ad_id} - Exiting script and pausing for 1 minute...")
-                    import sys
-                    import time
-                    time.sleep(60)
-                    sys.exit(99)
-                return text
+                next_proxy = get_next_proxy()
+                if next_proxy:
+                    proxy_info = next_proxy["http"].split("@")[1] if "@" in next_proxy["http"] else "unknown"
+                    print(f"[PROXY RETRY] {ad_id} via {proxy_info}")
+                    response = await asyncio.wait_for(
+                        session.get(url, headers=HEADERS, cookies=COOKIES, impersonate="chrome110", proxies=next_proxy),
+                        timeout=timeout
+                    )
+                    response.raise_for_status()
+                    text = getattr(response, "text", "")
+                    # ShieldSquare block detection
+                    import re
+                    if re.search(r'<title>\s*ShieldSquare Captcha\s*</title>', text, re.IGNORECASE):
+                        print(f"[BLOCK DETECTED] {ad_id} - Exiting script and pausing for 1 minute...")
+                        import sys
+                        import time
+                        time.sleep(60)
+                        sys.exit(99)
+                    return text
             except Exception as e2:
-                logging.error(f"Local system also failed: {e2}")
+                print(f"Next proxy also failed: {e2}")
+        
         return None
 
 
 import re
-
-def extract_bearer_token_from_html(html):
-    # Try to find Bearer token in JS variables or meta tags
-    # Common pattern: '"accessToken":"<token>"' or 'Bearer <token>'
-    m = re.search(r'"accessToken"\s*:\s*"([^"]+)"', html)
-    if m:
-        return m.group(1)
-    m = re.search(r'Bearer ([A-Za-z0-9\-\._~\+\/]+=*)', html)
-    if m:
-        return m.group(1)
-    return None
+import logging
 
 def extract_ad_id_from_url(entry_url):
     # Extract the number after the last dash at the end of the URL
@@ -376,26 +346,32 @@ async def save_entry_html(session, entry_url):
         conn.close()
         return False
     conn.close()
-    now_dt = datetime.now()
-    now_str = now_dt.strftime("%Y%m%d_%H%M%S")
-    filename = f"{ad_id}_{now_str}.html"
+    
+    # Use only ad_id for filename (no datetime)
+    filename = f"{ad_id}.html"
     save_path = os.path.join(BACKEND_WEBSITE_DIR, filename)
-    log_path = os.path.join(BACKEND_LOGS_DIR, filename.replace('.html', '.log'))
+    log_path = os.path.join(BACKEND_LOGS_DIR, f"{ad_id}.log")
+    
     t0 = time.time()
     html = await fetch_html(session, entry_url)
     duration_ms = int((time.time() - t0) * 1000)
     timestamp = datetime.now().isoformat()
+    
     if html:
+        # Save/overwrite HTML file with just ad_id
         with open(save_path, "w", encoding="utf-8") as f:
             f.write(html)
+        
+        # Append to log file (create if doesn't exist)
         log_line = f"{timestamp} HTML EXTRACTION {filename} SUCCESS {duration_ms}ms\n"
         print(f"[SAVED] {ad_id}")
-        with open(log_path, "w", encoding="utf-8") as logf:
+        with open(log_path, "a", encoding="utf-8") as logf:  # Changed to append mode
             logf.write(log_line)
         return True
     else:
+        # Append failure to log file
         log_line = f"{timestamp} HTML EXTRACTION {filename} FAILED {duration_ms}ms\n"
-        with open(log_path, "w", encoding="utf-8") as logf:
+        with open(log_path, "a", encoding="utf-8") as logf:  # Changed to append mode
             logf.write(log_line)
         return False
 
