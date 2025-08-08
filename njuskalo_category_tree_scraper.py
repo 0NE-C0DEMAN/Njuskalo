@@ -29,6 +29,134 @@ spec.loader.exec_module(bearer_token_finder)
 
 from datetime import datetime
 import threading
+import logging
+import traceback
+
+# --- Comprehensive Logging System ---
+def setup_comprehensive_logging():
+    """Setup comprehensive logging to backend/logs/ directory"""
+    logs_dir = os.path.join(os.path.dirname(__file__), "backend", "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    
+    # Info logger
+    info_logger = logging.getLogger('njuskalo_info')
+    info_logger.setLevel(logging.INFO)
+    info_logger.handlers.clear()
+    
+    info_handler = logging.FileHandler(os.path.join(logs_dir, f"info_{today_str}.log"), encoding='utf-8')
+    info_formatter = logging.Formatter('%(message)s')
+    info_handler.setFormatter(info_formatter)
+    info_logger.addHandler(info_handler)
+    info_logger.propagate = False
+    
+    # Error logger
+    error_logger = logging.getLogger('njuskalo_error')
+    error_logger.setLevel(logging.ERROR)
+    error_logger.handlers.clear()
+    
+    error_handler = logging.FileHandler(os.path.join(logs_dir, f"error_{today_str}.log"), encoding='utf-8')
+    error_formatter = logging.Formatter('%(message)s')
+    error_handler.setFormatter(error_formatter)
+    error_logger.addHandler(error_handler)
+    error_logger.propagate = False
+    
+    return info_logger, error_logger
+
+# Initialize comprehensive logging
+comprehensive_info_logger, comprehensive_error_logger = setup_comprehensive_logging()
+
+def log_process_start(process_name):
+    """Log process start"""
+    timestamp = datetime.now().isoformat()
+    comprehensive_info_logger.info(f"[{timestamp}] PROCESS_START {process_name}")
+
+def log_process_end(process_name, start_time, http_count=0, parse_count=0):
+    """Log process end with summary"""
+    timestamp = datetime.now().isoformat()
+    duration = time.time() - start_time
+    comprehensive_info_logger.info(f"[{timestamp}] PROCESS_END {process_name} (Duration: {duration:.2f}s)")
+    comprehensive_info_logger.info(f"[{timestamp}] PROCESS_SUMMARY {process_name} - HTTP_Requests: {http_count}, Parsing_Operations: {parse_count}, Total_Duration: {duration:.2f}s")
+
+def log_http_completion(url, status, duration_ms, status_code=None):
+    """Log HTTP request completion"""
+    timestamp = datetime.now().isoformat()
+    display_url = url if len(url) <= 80 else url[:40] + "..." + url[-37:]
+    status_info = f"[{status_code}]" if status_code else ""
+    comprehensive_info_logger.info(f"[{timestamp}] HTTP {display_url} {status} {status_info} {duration_ms}ms")
+
+def log_http_failure(url, error, duration_ms, response_details=None):
+    """Log HTTP request failure"""
+    timestamp = datetime.now().isoformat()
+    display_url = url if len(url) <= 80 else url[:40] + "..." + url[-37:]
+    comprehensive_info_logger.info(f"[{timestamp}] HTTP {display_url} FAILED {duration_ms}ms")
+    
+    # Detailed error logging
+    error_lines = [
+        f"[{timestamp}] HTTP_REQUEST_FAILED",
+        f"URL: {url}",
+        f"Duration: {duration_ms}ms",
+        f"Error: {str(error)}",
+        f"Error Type: {type(error).__name__}"
+    ]
+    
+    if response_details:
+        error_lines.append(f"Response Details: {response_details}")
+    
+    error_lines.append("Stack Trace:")
+    error_lines.append(traceback.format_exc())
+    comprehensive_error_logger.error("\n".join(error_lines))
+
+def log_parsing_completion(filename, status, duration_ms, items_count=None):
+    """Log parsing completion"""
+    timestamp = datetime.now().isoformat()
+    items_info = f"[{items_count} items]" if items_count is not None else ""
+    comprehensive_info_logger.info(f"[{timestamp}] PARSE {filename} {status} {items_info} {duration_ms}ms")
+
+def log_parsing_failure(filename, error, duration_ms, html_snippet=None):
+    """Log parsing failure"""
+    timestamp = datetime.now().isoformat()
+    comprehensive_info_logger.info(f"[{timestamp}] PARSE {filename} FAILED {duration_ms}ms")
+    
+    error_lines = [
+        f"[{timestamp}] PARSING_FAILED",
+        f"Filename: {filename}",
+        f"Duration: {duration_ms}ms",
+        f"Error: {str(error)}",
+        f"Error Type: {type(error).__name__}"
+    ]
+    
+    if html_snippet:
+        if len(html_snippet) > 1000:
+            html_snippet = html_snippet[:500] + "\n... [TRUNCATED] ...\n" + html_snippet[-500:]
+        error_lines.append(f"Problematic HTML Snippet:\n{html_snippet}")
+    
+    error_lines.append("Stack Trace:")
+    error_lines.append(traceback.format_exc())
+    comprehensive_error_logger.error("\n".join(error_lines))
+
+def log_exception(context, error, additional_info=None):
+    """Log any exception with context"""
+    timestamp = datetime.now().isoformat()
+    error_lines = [
+        f"[{timestamp}] EXCEPTION",
+        f"Context: {context}",
+        f"Error: {str(error)}",
+        f"Error Type: {type(error).__name__}"
+    ]
+    
+    if additional_info:
+        error_lines.append(f"Additional Info: {additional_info}")
+    
+    error_lines.append("Stack Trace:")
+    error_lines.append(traceback.format_exc())
+    comprehensive_error_logger.error("\n".join(error_lines))
+
+# Global counters for process summary
+http_request_count = 0
+parsing_operation_count = 0
+process_start_time = None
 
 # --- Load proxies from file ---
 def load_proxies_from_file():
@@ -184,22 +312,22 @@ COOKIES = {
 
 # --- Category list to scrape ---
 CATEGORIES = [
-    "prodaja-kuca",
-    "iznajmljivanje-kuca",
-    "prodaja-stanova",
-    "iznajmljivanje-stanova",
-    "prodaja-zemljista",
-    "zakup-zemljista",
-    "prodaja-poslovnih-prostora",
-    "iznajmljivanje-poslovnih-prostora",
+    # "prodaja-kuca",
+    # "iznajmljivanje-kuca",
+    # "prodaja-stanova",
+    # "iznajmljivanje-stanova",
+    # "prodaja-zemljista",
+    # "zakup-zemljista",
+    # "prodaja-poslovnih-prostora",
+    # "iznajmljivanje-poslovnih-prostora",
     "novogradnja",                                    # currently running only for this category for testing. uncomment all to test for full run.
-    "vikendice",
-    "montazni-objekti",
-    "prodaja-luksuznih-nekretnina",
-    "iznajmljivanje-luksuznih-nekretnina",
-    "prodaja-garaza",
-    "iznajmljivanje-garaza",
-    "iznajmljivanje-soba",
+    # "vikendice",
+    # "montazni-objekti",
+    # "prodaja-luksuznih-nekretnina",
+    # "iznajmljivanje-luksuznih-nekretnina",
+    # "prodaja-garaza",
+    # "iznajmljivanje-garaza",
+    # "iznajmljivanje-soba",
     # "cimeri"
 ]
 
@@ -288,36 +416,47 @@ class CategoryLogger:
             self._log_file = None
 
 def extract_category_links_from_html(html):
-    # Anti-bot detection: only if selector fails AND anti-bot keyword is present
-    antibot_signals = [
-        # 'captcha',
-        # 'prove you are human',
-        # 'robot check',
-        # 'cloudflare',
-        # 'unusual traffic',
-        # 'access denied',
-        # 'are you a human',
-        # 'please verify',
-        # 'security check',
-        # 'blocked',
-    ]
-    soup = BeautifulSoup(html, "html.parser")
-    categories_div = soup.find("div", class_="entity-list-categories")
-    if not categories_div:
-        lower_html = html.lower()
-        for signal in antibot_signals:
-            if signal in lower_html:
-                return 'ANTIBOT_DETECTED'
-        return []  # treat as leaf if no subcategories and no anti-bot
-    links = []
-    # Find all li elements for categories (works for both single and multi-column)
-    for li in categories_div.find_all("li", class_=["CategoryListing-topCategoryItem", "CategoryListing-topCategoryItemFauxAnchor"]):
-        a = li.find("a", class_="CategoryListing-topCategoryLink")
-        if a and a.get("href"):
-            name = a.get_text(strip=True)
-            href = a.get("href")
-            links.append({"name": name, "url": href})
-    return links
+    try:
+        # Anti-bot detection: only if selector fails AND anti-bot keyword is present
+        antibot_signals = [
+            # 'captcha',
+            # 'prove you are human',
+            # 'robot check',
+            # 'cloudflare',
+            # 'unusual traffic',
+            # 'access denied',
+            # 'are you a human',
+            # 'please verify',
+            # 'security check',
+            # 'blocked',
+        ]
+        soup = BeautifulSoup(html, "html.parser")
+        categories_div = soup.find("div", class_="entity-list-categories")
+        if not categories_div:
+            lower_html = html.lower()
+            for signal in antibot_signals:
+                if signal in lower_html:
+                    log_parsing_failure("extract_category_links", "Anti-bot detection", html[:1000])
+                    return 'ANTIBOT_DETECTED'
+            # Log successful empty parsing
+            log_parsing_completion("extract_category_links", 0, "leaf_category")
+            return []  # treat as leaf if no subcategories and no anti-bot
+        links = []
+        # Find all li elements for categories (works for both single and multi-column)
+        for li in categories_div.find_all("li", class_=["CategoryListing-topCategoryItem", "CategoryListing-topCategoryItemFauxAnchor"]):
+            a = li.find("a", class_="CategoryListing-topCategoryLink")
+            if a and a.get("href"):
+                name = a.get_text(strip=True)
+                href = a.get("href")
+                links.append({"name": name, "url": href})
+        
+        # Log successful parsing
+        log_parsing_completion("extract_category_links", len(links), "category_list")
+        return links
+        
+    except Exception as e:
+        log_parsing_failure("extract_category_links", str(e), html[:1000])
+        return []
 
 async def fetch_html(session, url):
     """Fetch HTML with cycling between local and proxy connections"""
@@ -353,6 +492,9 @@ async def fetch_html(session, url):
         response.raise_for_status()
         text = getattr(response, "text", "")
         
+        # Log HTTP completion
+        log_http_completion(url, response.status_code, len(text), "proxy" if not use_local else "local")
+        
         # Check for proxy-specific blocks
         if is_proxy_forbidden(text):
             if not use_local:
@@ -369,6 +511,9 @@ async def fetch_html(session, url):
                     response.raise_for_status()
                     text = getattr(response, "text", "")
                     
+                    # Log retry HTTP completion
+                    log_http_completion(url, response.status_code, len(text), "proxy_retry")
+                    
                     if is_proxy_forbidden(text):
                         print(f"[PROXY FAILED] Next proxy also blocked, continuing with current response")
                 else:
@@ -377,6 +522,7 @@ async def fetch_html(session, url):
         return text
         
     except Exception as e:
+        log_http_failure(url, str(e), 0)
         safe_print(f"[fetch_html] Error fetching {url}: {e}")
         
         if not use_local:
@@ -392,8 +538,14 @@ async def fetch_html(session, url):
                         timeout=timeout
                     )
                     response.raise_for_status()
-                    return getattr(response, "text", "")
+                    text = getattr(response, "text", "")
+                    
+                    # Log successful retry
+                    log_http_completion(url, response.status_code, len(text), "proxy_retry_success")
+                    
+                    return text
                 except Exception as e2:
+                    log_http_failure(url, str(e2), 0, "proxy_retry_failed")
                     safe_print(f"[PROXY RETRY FAILED] Next proxy also failed: {e2}")
         
         return None
@@ -634,6 +786,13 @@ async def build_category_tree(session, url, name, depth=0, max_depth=10, logger=
 
 
 async def main_category_tree_scrape():
+    # Setup comprehensive logging
+    setup_comprehensive_logging()
+    
+    # Log process start
+    start_time = time.time()
+    log_process_start("category_tree_scraping")
+    
     # Checkpoint setup
     CHECKPOINTS_DIR = os.path.join(os.path.dirname(__file__), "checkpoints")
     os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
@@ -703,6 +862,10 @@ async def main_category_tree_scrape():
     with open(merged_tree_file, "w", encoding="utf-8") as f:
         json.dump(all_trees, f, ensure_ascii=False, indent=2)
     safe_print(f"\nMerged category tree saved to {merged_tree_file}")
+    
+    # Log process end
+    log_process_end("category_tree_scraping", start_time)
+    
     safe_print("\nCategory Tree Structure:\n")
     # Optionally print the last logger's log (for the last category)
     if 'logger' in locals():

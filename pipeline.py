@@ -178,9 +178,19 @@ class PipelineRunner:
         
         logging.info(f"Total execution time: {total_time:.2f}s")
         
-        # Step-by-step timing
+        # Step-by-step timing - fixed logic
         for step, duration in self.step_times.items():
-            status = "✅" if step not in [f"Step {i}" for i in range(1, len(failed_steps) + 2)] else "❌"
+            # Extract step number from step name (e.g., "Step 1" -> 1)
+            step_num = int(step.split()[1])
+            
+            # Check if this step failed by looking if there are any failed steps 
+            # and if this step number is at or after the first failed step
+            if failed_steps:
+                first_failed_step = int(failed_steps[0].split()[1])
+                status = "❌" if step_num >= first_failed_step else "✅"
+            else:
+                status = "✅"
+                
             logging.info(f"{status} {step}: {duration:.2f}s")
         
         return len(failed_steps) == 0

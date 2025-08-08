@@ -5,11 +5,118 @@ import time
 import traceback
 import re
 import sqlite3
+import logging
 from datetime import datetime
 from bs4 import BeautifulSoup
 from multiprocessing import Pool, cpu_count
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import psutil
+
+# Comprehensive logging setup
+def setup_comprehensive_logging():
+    """Setup comprehensive logging with info and error loggers"""
+    logs_dir = os.path.join(os.path.dirname(__file__), "backend", "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    info_log_file = os.path.join(logs_dir, f"info_{date_str}.log")
+    error_log_file = os.path.join(logs_dir, f"error_{date_str}.log")
+    
+    # Setup info logger
+    global info_logger
+    info_logger = logging.getLogger('parser_info')
+    info_logger.setLevel(logging.INFO)
+    if not info_logger.handlers:
+        info_handler = logging.FileHandler(info_log_file, encoding='utf-8')
+        info_formatter = logging.Formatter('%(asctime)s - %(message)s')
+        info_handler.setFormatter(info_formatter)
+        info_logger.addHandler(info_handler)
+        info_logger.propagate = False
+    
+    # Setup error logger
+    global error_logger
+    error_logger = logging.getLogger('parser_error')
+    error_logger.setLevel(logging.ERROR)
+    if not error_logger.handlers:
+        error_handler = logging.FileHandler(error_log_file, encoding='utf-8')
+        error_formatter = logging.Formatter('%(asctime)s - %(message)s')
+        error_handler.setFormatter(error_formatter)
+        error_logger.addHandler(error_handler)
+        error_logger.propagate = False
+
+# Global counters
+http_success_count = 0
+http_failure_count = 0
+parsing_success_count = 0
+parsing_failure_count = 0
+
+def log_process_start(process_name):
+    """Log process start"""
+    info_logger.info(f"PROCESS_START: {process_name} started at {datetime.now().isoformat()}")
+
+def log_process_end(process_name, start_time):
+    """Log process end with duration and summary"""
+    duration = time.time() - start_time
+    summary = f"Duration: {duration:.2f}s, HTTP Success: {http_success_count}, HTTP Failures: {http_failure_count}, Parsing Success: {parsing_success_count}, Parsing Failures: {parsing_failure_count}"
+    info_logger.info(f"PROCESS_END: {process_name} completed at {datetime.now().isoformat()} - {summary}")
+
+def log_http_completion(url, status_code, response_size, method="GET"):
+    """Log successful HTTP request"""
+    global http_success_count
+    http_success_count += 1
+    info_logger.info(f"HTTP_SUCCESS: {method} {url} -> {status_code} ({response_size} bytes)")
+
+def log_http_failure(url, error_msg, duration_ms, method="GET"):
+    """Log failed HTTP request"""
+    global http_failure_count
+    http_failure_count += 1
+    error_logger.error(f"HTTP_FAILURE: {method} {url} failed after {duration_ms}ms - {error_msg}")
+
+def log_parsing_completion(operation, items_parsed, data_type="html"):
+    """Log successful parsing operation"""
+    try:
+        global parsing_success_count
+        parsing_success_count += 1
+        
+        # Reinitialize logger if not available (for multiprocessing)
+        if 'info_logger' not in globals():
+            setup_comprehensive_logging()
+        
+        info_logger.info(f"PARSING_SUCCESS: {operation} parsed {items_parsed} items of type {data_type}")
+    except:
+        # Fallback to print if logging fails
+        print(f"PARSING_SUCCESS: {operation} parsed {items_parsed} items of type {data_type}")
+
+def log_parsing_failure(operation, error_msg, html_snippet=""):
+    """Log failed parsing operation with HTML snippet"""
+    try:
+        global parsing_failure_count
+        parsing_failure_count += 1
+        
+        # Reinitialize logger if not available (for multiprocessing)
+        if 'error_logger' not in globals():
+            setup_comprehensive_logging()
+        
+        snippet = html_snippet[:500] + "..." if len(html_snippet) > 500 else html_snippet
+        error_logger.error(f"PARSING_FAILURE: {operation} failed - {error_msg} | HTML: {snippet}")
+    except:
+        # Fallback to print if logging fails
+        snippet = html_snippet[:500] + "..." if len(html_snippet) > 500 else html_snippet
+        print(f"PARSING_FAILURE: {operation} failed - {error_msg} | HTML: {snippet}")
+
+def log_exception(operation, exception):
+    """Log exception with full traceback"""
+    try:
+        # Reinitialize logger if not available (for multiprocessing)
+        if 'error_logger' not in globals():
+            setup_comprehensive_logging()
+        
+        import traceback
+        error_logger.error(f"EXCEPTION: {operation} - {str(exception)} | Traceback: {traceback.format_exc()}")
+    except:
+        # Fallback to print if logging fails
+        import traceback
+        print(f"EXCEPTION: {operation} - {str(exception)} | Traceback: {traceback.format_exc()}")
 
 # Paths
 INPUT_DIR = "backend/website"
@@ -199,6 +306,9 @@ def process_single_file_ultrafast(filename):
 
         duration_ms = int((time.time() - file_start) * 1000)
         
+        # Log successful parsing
+        log_parsing_completion("html_to_json", 1, "ad_data")
+        
         return {
             'filename': filename,
             'status': 'success',
@@ -208,6 +318,10 @@ def process_single_file_ultrafast(filename):
 
     except Exception as e:
         duration_ms = int((time.time() - file_start) * 1000)
+        
+        # Log parsing failure
+        log_parsing_failure("html_to_json", str(e)[:200], html[:1000] if 'html' in locals() else "")
+        
         return {
             'filename': filename,
             'status': 'error',
@@ -268,6 +382,13 @@ def process_batch_ultrafast(filenames):
 
 def main():
     """Ultra-fast main function"""
+    # Setup comprehensive logging
+    setup_comprehensive_logging()
+    
+    # Log process start
+    process_start_time = time.time()
+    log_process_start("html_parsing")
+    
     exit_code = EXIT_SUCCESS
     start_time = time.time()
     
@@ -358,6 +479,9 @@ def main():
         exit_code = EXIT_FS_ERROR
         print(f"FATAL ERROR: {str(e)}")
         traceback.print_exc()
+    
+    # Log process end
+    log_process_end("html_parsing", process_start_time)
     
     return exit_code
 

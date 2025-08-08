@@ -4,9 +4,88 @@ import re
 import json
 import asyncio
 import sqlite3
+import logging
+import time
 from datetime import datetime
 from curl_cffi.requests import AsyncSession
-import logging
+
+# Comprehensive logging setup
+def setup_comprehensive_logging():
+    """Setup comprehensive logging with info and error loggers"""
+    logs_dir = os.path.join(os.path.dirname(__file__), "backend", "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    info_log_file = os.path.join(logs_dir, f"info_{date_str}.log")
+    error_log_file = os.path.join(logs_dir, f"error_{date_str}.log")
+    
+    # Setup info logger
+    global info_logger
+    info_logger = logging.getLogger('phone_api_info')
+    info_logger.setLevel(logging.INFO)
+    if not info_logger.handlers:
+        info_handler = logging.FileHandler(info_log_file, encoding='utf-8')
+        info_formatter = logging.Formatter('%(asctime)s - %(message)s')
+        info_handler.setFormatter(info_formatter)
+        info_logger.addHandler(info_handler)
+        info_logger.propagate = False
+    
+    # Setup error logger
+    global error_logger
+    error_logger = logging.getLogger('phone_api_error')
+    error_logger.setLevel(logging.ERROR)
+    if not error_logger.handlers:
+        error_handler = logging.FileHandler(error_log_file, encoding='utf-8')
+        error_formatter = logging.Formatter('%(asctime)s - %(message)s')
+        error_handler.setFormatter(error_formatter)
+        error_logger.addHandler(error_handler)
+        error_logger.propagate = False
+
+# Global counters
+http_success_count = 0
+http_failure_count = 0
+parsing_success_count = 0
+parsing_failure_count = 0
+
+def log_process_start(process_name):
+    """Log process start"""
+    info_logger.info(f"PROCESS_START: {process_name} started at {datetime.now().isoformat()}")
+
+def log_process_end(process_name, start_time):
+    """Log process end with duration and summary"""
+    duration = time.time() - start_time
+    summary = f"Duration: {duration:.2f}s, HTTP Success: {http_success_count}, HTTP Failures: {http_failure_count}, Parsing Success: {parsing_success_count}, Parsing Failures: {parsing_failure_count}"
+    info_logger.info(f"PROCESS_END: {process_name} completed at {datetime.now().isoformat()} - {summary}")
+
+def log_http_completion(url, status_code, response_size, method="GET"):
+    """Log successful HTTP request"""
+    global http_success_count
+    http_success_count += 1
+    info_logger.info(f"HTTP_SUCCESS: {method} {url} -> {status_code} ({response_size} bytes)")
+
+def log_http_failure(url, error_msg, duration_ms, method="GET"):
+    """Log failed HTTP request"""
+    global http_failure_count
+    http_failure_count += 1
+    error_logger.error(f"HTTP_FAILURE: {method} {url} failed after {duration_ms}ms - {error_msg}")
+
+def log_parsing_completion(operation, items_parsed, data_type="json"):
+    """Log successful parsing operation"""
+    global parsing_success_count
+    parsing_success_count += 1
+    info_logger.info(f"PARSING_SUCCESS: {operation} parsed {items_parsed} items of type {data_type}")
+
+def log_parsing_failure(operation, error_msg, html_snippet=""):
+    """Log failed parsing operation with HTML snippet"""
+    global parsing_failure_count
+    parsing_failure_count += 1
+    snippet = html_snippet[:500] + "..." if len(html_snippet) > 500 else html_snippet
+    error_logger.error(f"PARSING_FAILURE: {operation} failed - {error_msg} | HTML: {snippet}")
+
+def log_exception(operation, exception):
+    """Log exception with full traceback"""
+    import traceback
+    error_logger.error(f"EXCEPTION: {operation} - {str(exception)} | Traceback: {traceback.format_exc()}")
 
 
 # ---- CONFIGURATION ----
@@ -99,8 +178,15 @@ async def fetch_phone_number(session, ad_id, bearer_token, cookies):
     try:
         resp = await session.get(url, headers=headers, cookies=cookies, timeout=15, proxies=proxy_cfg)
         resp.raise_for_status()
-        return resp.json()
+        
+        # Log HTTP success
+        data = resp.json()
+        log_http_completion(url, resp.status_code, len(str(data)))
+        
+        return data
     except Exception as e:
+        # Log HTTP failure
+        log_http_failure(url, str(e), 0)
         logging.error(f"ad_id {ad_id}: {e}")
         if '401' in str(e):
             return 'REFRESH_TOKEN'
@@ -155,7 +241,11 @@ async def process_file(session, html_path, bearer_token, cookies):
             for n in data["data"]["attributes"]["numbers"]
             if n.get("formattedNumber")
         ]
+        # Log successful parsing
+        log_parsing_completion("phone_extraction", len(numbers), "phone_numbers")
     except Exception as e:
+        # Log parsing failure
+        log_parsing_failure("phone_extraction", str(e), str(data)[:1000] if data else "")
         logging.warning(f"[WARN] Failed to parse phone data for ad {ad_id}: {e}")
 
     if numbers:
@@ -170,6 +260,13 @@ async def process_file(session, html_path, bearer_token, cookies):
 
 
 async def main():
+    # Setup comprehensive logging
+    setup_comprehensive_logging()
+    
+    # Log process start
+    start_time = time.time()
+    log_process_start("phone_fetching")
+    
     html_files = find_all_html_files()
     logging.info(f"Found {len(html_files)} HTML files.")
 
@@ -235,6 +332,9 @@ async def main():
                 continue
             i += BATCH_SIZE
             # await asyncio.sleep(random.uniform(0.8, 1.2))
+    
+    # Log process end
+    log_process_end("phone_fetching", start_time)
 
 
 if __name__ == "__main__":

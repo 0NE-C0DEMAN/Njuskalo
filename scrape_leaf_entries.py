@@ -8,7 +8,7 @@ import json
 import asyncio
 import random
 import threading
-
+import logging
 import sys
 import time
 from datetime import datetime
@@ -16,6 +16,84 @@ import sqlite3
 import json
 
 today_str = datetime.now().strftime("%Y-%m-%d")
+
+# Comprehensive logging setup
+def setup_comprehensive_logging():
+    """Setup comprehensive logging with info and error loggers"""
+    logs_dir = os.path.join(os.path.dirname(__file__), "backend", "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    info_log_file = os.path.join(logs_dir, f"info_{date_str}.log")
+    error_log_file = os.path.join(logs_dir, f"error_{date_str}.log")
+    
+    # Setup info logger
+    global info_logger
+    info_logger = logging.getLogger('scraper_info')
+    info_logger.setLevel(logging.INFO)
+    if not info_logger.handlers:
+        info_handler = logging.FileHandler(info_log_file, encoding='utf-8')
+        info_formatter = logging.Formatter('%(asctime)s - %(message)s')
+        info_handler.setFormatter(info_formatter)
+        info_logger.addHandler(info_handler)
+        info_logger.propagate = False
+    
+    # Setup error logger
+    global error_logger
+    error_logger = logging.getLogger('scraper_error')
+    error_logger.setLevel(logging.ERROR)
+    if not error_logger.handlers:
+        error_handler = logging.FileHandler(error_log_file, encoding='utf-8')
+        error_formatter = logging.Formatter('%(asctime)s - %(message)s')
+        error_handler.setFormatter(error_formatter)
+        error_logger.addHandler(error_handler)
+        error_logger.propagate = False
+
+# Global counters
+http_success_count = 0
+http_failure_count = 0
+parsing_success_count = 0
+parsing_failure_count = 0
+
+def log_process_start(process_name):
+    """Log process start"""
+    info_logger.info(f"PROCESS_START: {process_name} started at {datetime.now().isoformat()}")
+
+def log_process_end(process_name, start_time):
+    """Log process end with duration and summary"""
+    duration = time.time() - start_time
+    summary = f"Duration: {duration:.2f}s, HTTP Success: {http_success_count}, HTTP Failures: {http_failure_count}, Parsing Success: {parsing_success_count}, Parsing Failures: {parsing_failure_count}"
+    info_logger.info(f"PROCESS_END: {process_name} completed at {datetime.now().isoformat()} - {summary}")
+
+def log_http_completion(url, status_code, response_size, method="GET"):
+    """Log successful HTTP request"""
+    global http_success_count
+    http_success_count += 1
+    info_logger.info(f"HTTP_SUCCESS: {method} {url} -> {status_code} ({response_size} bytes)")
+
+def log_http_failure(url, error_msg, duration_ms, method="GET"):
+    """Log failed HTTP request"""
+    global http_failure_count
+    http_failure_count += 1
+    error_logger.error(f"HTTP_FAILURE: {method} {url} failed after {duration_ms}ms - {error_msg}")
+
+def log_parsing_completion(operation, items_parsed, data_type="html"):
+    """Log successful parsing operation"""
+    global parsing_success_count
+    parsing_success_count += 1
+    info_logger.info(f"PARSING_SUCCESS: {operation} parsed {items_parsed} items of type {data_type}")
+
+def log_parsing_failure(operation, error_msg, html_snippet=""):
+    """Log failed parsing operation with HTML snippet"""
+    global parsing_failure_count
+    parsing_failure_count += 1
+    snippet = html_snippet[:500] + "..." if len(html_snippet) > 500 else html_snippet
+    error_logger.error(f"PARSING_FAILURE: {operation} failed - {error_msg} | HTML: {snippet}")
+
+def log_exception(operation, exception):
+    """Log exception with full traceback"""
+    import traceback
+    error_logger.error(f"EXCEPTION: {operation} - {str(exception)} | Traceback: {traceback.format_exc()}")
 
 from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
@@ -182,29 +260,37 @@ def is_proxy_forbidden(response_text):
     return any(sig in response_text.lower() for sig in forbidden_signals)
 
 def extract_entry_urls(html):
-    soup = BeautifulSoup(html, "html.parser")
-    urls = []
-    # Only extract from sections with the correct group title
-    valid_titles = {"Njuškalo oglasi", "Sniff ads"}
-    for section in soup.find_all("section", class_=lambda c: c and "EntityList" in c):
-        h2 = section.find("h2", class_=lambda c: c and "EntityList-groupTitle" in c)
-        if not h2:
-            continue
-        # Extract text, ignoring <font> wrappers
-        title_text = h2.get_text(strip=True)
-        if title_text not in valid_titles:
-            continue
-        ul = section.find("ul", class_=lambda c: c and "EntityList-items" in c)
-        if not ul:
-            continue
-        for li in ul.find_all("li", class_=lambda c: c and "EntityList-item" in c):
-            a = li.find("a", class_=ENTRY_LINK_A_CLASS)
-            if a and a.get("href"):
-                href = a["href"]
-                if href.startswith("/"):
-                    href = "https://www.njuskalo.hr" + href
-                urls.append(href)
-    return list(set(urls))
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        urls = []
+        # Only extract from sections with the correct group title
+        valid_titles = {"Njuškalo oglasi", "Sniff ads"}
+        for section in soup.find_all("section", class_=lambda c: c and "EntityList" in c):
+            h2 = section.find("h2", class_=lambda c: c and "EntityList-groupTitle" in c)
+            if not h2:
+                continue
+            # Extract text, ignoring <font> wrappers
+            title_text = h2.get_text(strip=True)
+            if title_text not in valid_titles:
+                continue
+            ul = section.find("ul", class_=lambda c: c and "EntityList-items" in c)
+            if not ul:
+                continue
+            for li in ul.find_all("li", class_=lambda c: c and "EntityList-item" in c):
+                a = li.find("a", class_=ENTRY_LINK_A_CLASS)
+                if a and a.get("href"):
+                    href = a["href"]
+                    if href.startswith("/"):
+                        href = "https://www.njuskalo.hr" + href
+                    urls.append(href)
+        
+        unique_urls = list(set(urls))
+        log_parsing_completion("extract_entry_urls", len(unique_urls), "entry_urls")
+        return unique_urls
+        
+    except Exception as e:
+        log_parsing_failure("extract_entry_urls", str(e), html[:1000])
+        return []
 
 async def fetch_html(session, url):
     """Fetch HTML with cycling between local and proxy connections"""
@@ -243,6 +329,9 @@ async def fetch_html(session, url):
         response.raise_for_status()
         text = getattr(response, "text", "")
         
+        # Log HTTP success
+        log_http_completion(url, response.status_code, len(text), "proxy" if not use_local else "local")
+        
         # Enhanced block detection with immediate fallback
         import re
         is_shieldsquare_blocked = re.search(r'<title>\s*ShieldSquare Captcha\s*</title>', text, re.IGNORECASE)
@@ -277,6 +366,7 @@ async def fetch_html(session, url):
         
     except Exception as e:
         ad_id = extract_ad_id(url)
+        log_http_failure(url, str(e), 0)
         print(f"Error fetching {ad_id}: {e}")
         
         if not use_local:
@@ -293,6 +383,10 @@ async def fetch_html(session, url):
                     )
                     response.raise_for_status()
                     text = getattr(response, "text", "")
+                    
+                    # Log successful retry
+                    log_http_completion(url, response.status_code, len(text), "proxy_retry")
+                    
                     # ShieldSquare block detection
                     import re
                     if re.search(r'<title>\s*ShieldSquare Captcha\s*</title>', text, re.IGNORECASE):
@@ -303,6 +397,7 @@ async def fetch_html(session, url):
                         sys.exit(99)
                     return text
             except Exception as e2:
+                log_http_failure(url, str(e2), 0, "proxy_retry_failed")
                 print(f"Next proxy also failed: {e2}")
         
         return None
@@ -521,6 +616,13 @@ def load_checkpoint(leaf_file):
 
 
 async def main():
+    # Setup comprehensive logging
+    setup_comprehensive_logging()
+    
+    # Log process start
+    start_time = time.time()
+    log_process_start("leaf_entries_scraping")
+    
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--restart", action="store_true", help="Restart from zero, ignore checkpoint.")
@@ -572,6 +674,9 @@ async def main():
                     save_checkpoint(idx+1, leaf_file)
         await asyncio.gather(*(process_one_leaf(idx, url) for idx, url in enumerate(leaf_urls[start_idx:], start=start_idx)))
         print(f"  Done with {leaf_file}. All entry HTMLs saved in '{BACKEND_WEBSITE_DIR}' directory.")
+    
+    # Log process end
+    log_process_end("leaf_entries_scraping", start_time)
 
 if __name__ == "__main__":
     try:
